@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -10,34 +11,36 @@ import (
 )
 
 type SSLInfo struct {
-	Website   string    `json:"website"`
-	NotBefore time.Time `json:"not_before"`
-	NotAfter  time.Time `json:"not_after"`
-	IdValid   bool      `json:"is_valid"`
+	Website    string    `json:"website"`
+	CommonName string    `json:"common_name"`
+	DNSNames   []string  `json:"dns_names"`
+	NotBefore  time.Time `json:"not_before"`
+	NotAfter   time.Time `json:"not_after"`
+	IdValid    bool      `json:"is_valid"`
 }
 
 type ErrorResponse struct {
 	Error string `json:"error"`
 }
 
-func getSSLCertificateDates(hostname string) (time.Time, time.Time, error) {
+func getSSLCertificate(hostname string) (*x509.Certificate, error) {
 	dialer := &net.Dialer{
 		Timeout:   2 * time.Second,
 		DualStack: true,
 	}
 
-	conn, err := tls.DialWithDialer(dialer, "tcp", hostname+":443", nil)
+	conn, err := tls.DialWithDialer(dialer, "tcp", hostname+":443", &tls.Config{InsecureSkipVerify: true})
 	if err != nil {
-		return time.Time{}, time.Time{}, err
+		return nil, err
 	}
 	defer conn.Close()
 
 	state := conn.ConnectionState()
 	for _, cert := range state.PeerCertificates {
-		return cert.NotBefore, cert.NotAfter, nil
+		return cert, nil
 	}
 
-	return time.Time{}, time.Time{}, fmt.Errorf("unable to retrieve SSL certificate information")
+	return nil, fmt.Errorf("unable to retrieve SSL certificate information")
 }
 
 func sslInfoHandler(w http.ResponseWriter, r *http.Request) {
@@ -50,7 +53,7 @@ func sslInfoHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	notBefore, notAfter, err := getSSLCertificateDates(website)
+	cert, err := getSSLCertificate(website)
 	if err != nil {
 		errorResponse := ErrorResponse{Error: err.Error()}
 		w.Header().Set("Content-Type", "application/json")
@@ -60,10 +63,12 @@ func sslInfoHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	sslInfo := SSLInfo{
-		Website:   website,
-		NotBefore: notBefore,
-		NotAfter:  notAfter,
-		IdValid:   time.Now().Before(notAfter),
+		Website:    website,
+		CommonName: cert.Subject.CommonName,
+		DNSNames:   cert.DNSNames,
+		NotBefore:  cert.NotBefore,
+		NotAfter:   cert.NotAfter,
+		IdValid:    time.Now().Before(cert.NotAfter) && time.Now().After(cert.NotBefore),
 	}
 
 	w.Header().Set("Content-Type", "application/json")
