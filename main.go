@@ -46,7 +46,10 @@ func sslInfoHandler(w http.ResponseWriter, r *http.Request) {
 
 	notBefore, notAfter, err := getSSLCertificateDates(website)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Error: %s", err), http.StatusInternalServerError)
+		errorResponse := ErrorResponse{Error: err.Error()}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(errorResponse)
 		return
 	}
 
