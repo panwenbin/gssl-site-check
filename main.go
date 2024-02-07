@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"time"
 )
@@ -20,7 +21,12 @@ type ErrorResponse struct {
 }
 
 func getSSLCertificateDates(hostname string) (time.Time, time.Time, error) {
-	conn, err := tls.Dial("tcp", hostname+":443", nil)
+	dialer := &net.Dialer{
+		Timeout:   2 * time.Second,
+		DualStack: true,
+	}
+
+	conn, err := tls.DialWithDialer(dialer, "tcp", hostname+":443", nil)
 	if err != nil {
 		return time.Time{}, time.Time{}, err
 	}
